@@ -189,9 +189,15 @@ def main():
             except Exception:
                 d = {}
             data = d.get("data", {}) or {}
-            pid = data.get("id") or (data.get("post", {}) or {}).get("id")
-            ver = (data.get("verification", {}) or {})
-            code = ver.get("verification_code") or data.get("verification_code")
+            post = d.get("post", {}) or data.get("post", {}) or {}
+            pid = post.get("id") or data.get("id") or (data.get("post", {}) or {}).get("id")
+            ver = post.get("verification", {}) or data.get("verification", {}) or {}
+            code = (ver.get("verification_code") or post.get("verification_code")
+                    or data.get("verification_code"))
+            if not code:
+                # any NN.NN-looking challenge embedded in the response
+                cm = re.search(r'"verification_code"\s*:\s*"([^"]+)"', r)
+                code = cm.group(1) if cm else None
             if pid and code:
                 ans = solve_challenge(json.dumps(data)[:1600])
                 if ans:
