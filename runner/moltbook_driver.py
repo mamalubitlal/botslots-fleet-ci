@@ -27,8 +27,10 @@ def nowz():
 
 
 def log(msg):
+    line = f"{nowz()} ci-loop: {msg}"
     with open(LOG, "a") as f:
-        f.write(f"{nowz()} ci-loop: {msg}\n")
+        f.write(line + "\n")
+    print(line, flush=True)
 
 
 def vps_curl(method, ep, payload=None):

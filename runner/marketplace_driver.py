@@ -27,8 +27,10 @@ def nowz():
 
 
 def log(msg):
+    line = f"{nowz()} ci-marketplace: {msg}"
     with open(LOG, "a") as f:
-        f.write(f"{nowz()} ci-marketplace: {msg}\n")
+        f.write(line + "\n")
+    print(line, flush=True)
 
 
 def load(path, default):
