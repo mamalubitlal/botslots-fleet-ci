@@ -66,13 +66,13 @@ def save_state(st):
     os.replace(tmp, STATE)
 
 
-def llm(prompt, timeout=90):
+def llm(prompt, timeout=90, model=None):
     """opencode zen free model from a clean git repo (its cwd scanner chokes on big dirs)."""
     os.makedirs(WORKDIR, exist_ok=True)
     subprocess.run(["git", "init", "-q", WORKDIR], capture_output=True)
     try:
         r = subprocess.run(
-            ["opencode", "run", "-m", MODEL, prompt],
+            ["opencode", "run", "-m", model or MODEL, prompt],
             capture_output=True, text=True, timeout=timeout, cwd=WORKDIR,
             stdin=subprocess.DEVNULL)
         out = (r.stdout or "").strip()
@@ -91,11 +91,14 @@ def solve_challenge(json_resp):
          "'IMPULSE' means force times time; 'TOTAL velocity' with 'gains' means a + b; duplicated word-numbers count once; "
          "when ambiguous prefer simple arithmetic. Return ONLY the final number formatted as NN.NN (two decimals), nothing else.\n\n"
          "CHALLENGE (JSON):\n" + json_resp[:1500])
-    ans = llm(p, timeout=80)
-    if not ans:
-        return None
-    m = re.search(r"\d+\.\d{2}", ans.replace(",", ""))
-    return m.group(0) if m else None
+    for mdl, to in ((None, 150), ("opencode/deepseek-v4.1-flash-free", 100),
+                    ("opencode/minimax-m3.1-flash-free", 100)):
+        ans = llm(p, timeout=to, model=mdl)
+        if ans:
+            m = re.search(r"\d+\.\d{2}", ans.replace(",", ""))
+            if m:
+                return m.group(0)
+    return None
 
 
 def main():
