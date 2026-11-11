@@ -17,7 +17,7 @@ VPS_PW_FILE = os.path.join(BASE, "creds", "vps_root_pw")
 VPS = "132.243.18.164"
 API = "https://www.moltbook.com/api/v1"
 WORKDIR = "/tmp/fleet_work"
-MODEL = "opencode/glm-5.3-flash-free"
+MODEL = "opencode/deepseek-v4.1-flash-free"
 
 os.makedirs(LOGDIR, exist_ok=True)
 
@@ -85,14 +85,26 @@ def llm(prompt, timeout=90, model=None):
         return None
 
 
-def solve_challenge(json_resp):
-    p = ("Solve this arithmetic challenge. Rules: word-numbers like 'Tw En Ty ThReE' mean 23, 'SeVeN' means 7; "
-         "if the text says TOTAL and 'divides IT by two' the answer is a + a/b; 'new speed/velocity' after losing X means a - X; "
-         "'IMPULSE' means force times time; 'TOTAL velocity' with 'gains' means a + b; duplicated word-numbers count once; "
-         "when ambiguous prefer simple arithmetic. Return ONLY the final number formatted as NN.NN (two decimals), nothing else.\n\n"
-         "CHALLENGE (JSON):\n" + json_resp[:1500])
-    for mdl, to in ((None, 150), ("opencode/deepseek-v4.1-flash-free", 100),
-                    ("opencode/minimax-m3.1-flash-free", 100)):
+def solve_challenge(d):
+    """Extract challenge_text from the post response and solve via free models."""
+    post = d.get("post", {}) or d.get("data", {}).get("post", {}) or {}
+    ver = post.get("verification") or d.get("verification") or {}
+    text = ver.get("challenge_text") or ""
+    if not text:
+        m = re.search(r'"challenge_text"\s*:\s*"([^"]+)"', json.dumps(d))
+        text = m.group(1) if m else ""
+    if not text:
+        text = json.dumps(d)[:1200]
+    p = ("Arithmetic challenge (obfuscated text: jumbled capitalization, inserted symbols, duplicated letters). "
+         "Rules: word-numbers like 'Tw En Ty ThReE' mean 23; 'Fi FtY' means 50; 'lOoObbSstTtEr' means lobster; "
+         "if it says TOTAL and 'divides IT by two' the answer is a + a/b; 'new speed/velocity' after losing X means a - X; "
+         "'IMPULSE' means force times time; 'TOTAL velocity' with 'gains' means a + b; duplicated letters/word-numbers count once; "
+         "when ambiguous prefer simple arithmetic. Answer with ONLY the final number in NN.NN format (two decimals).\n\n"
+         "CHALLENGE:\n" + text[:1200])
+    for mdl, to in (("opencode/deepseek-v4.1-flash-free", 90),
+                    ("opencode/big-pickle", 90),
+                    ("opencode/minimax-m3.1-flash-free", 90),
+                    ("opencode/glm-5.3-flash-free", 90)):
         ans = llm(p, timeout=to, model=mdl)
         if ans:
             m = re.search(r"\d+\.\d{2}", ans.replace(",", ""))
@@ -202,7 +214,7 @@ def main():
                 cm = re.search(r'"verification_code"\s*:\s*"([^"]+)"', r)
                 code = cm.group(1) if cm else None
             if pid and code:
-                ans = solve_challenge(json.dumps(d)[:2000])
+                ans = solve_challenge(d)
                 if ans:
                     v = vps_curl("POST", "/verify", {"verification_code": code, "answer": ans})
                     ok = '"success":true' in v or '"verified":true' in v
