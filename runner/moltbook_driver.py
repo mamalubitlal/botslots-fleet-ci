@@ -199,7 +199,7 @@ def main():
                 cm = re.search(r'"verification_code"\s*:\s*"([^"]+)"', r)
                 code = cm.group(1) if cm else None
             if pid and code:
-                ans = solve_challenge(json.dumps(data)[:1600])
+                ans = solve_challenge(json.dumps(d)[:2000])
                 if ans:
                     v = vps_curl("POST", "/verify", {"verification_code": code, "answer": ans})
                     ok = '"success":true' in v or '"verified":true' in v
