@@ -1,0 +1,30 @@
+name: ops-loop
+on:
+  schedule:
+    - cron: '36 3,11,19 * * *'
+  workflow_dispatch:
+concurrency:
+  group: ops
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BUNDLE_PW: ${{ secrets.BUNDLE_PW }}
+      WORKFLOW_NAME: ops
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decrypt bundle
+        run: bash runner/decrypt.sh
+      - name: Setup deps
+        run: pip install -q paramiko requests
+      - name: VPS health + bridge guard
+        run: python3 runner/ops_driver.py
+      - name: Recommit state
+        run: bash runner/recommit.sh
+      - name: Wipe plaintext
+        if: always()
+        run: bash runner/wipe.sh

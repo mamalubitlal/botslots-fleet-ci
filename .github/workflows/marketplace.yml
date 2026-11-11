@@ -1,0 +1,35 @@
+name: marketplace-loop
+on:
+  schedule:
+    - cron: '5 * * * *'
+  workflow_dispatch:
+concurrency:
+  group: marketplace
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BUNDLE_PW: ${{ secrets.BUNDLE_PW }}
+      WORKFLOW_NAME: marketplace
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decrypt bundle
+        run: bash runner/decrypt.sh
+      - name: Setup deps
+        run: |
+          pip install -q paramiko requests
+          npm install -g @lucid-agents/taskmarket@1.44.0
+          mkdir -p ~/.taskmarket
+          cp fleet/creds/taskmarket_keystore_backup.json ~/.taskmarket/keystore.json
+          chmod 600 ~/.taskmarket/keystore.json
+      - name: Poll marketplaces + TaskMarket sweep
+        run: python3 runner/marketplace_driver.py
+      - name: Recommit state
+        run: bash runner/recommit.sh
+      - name: Wipe plaintext
+        if: always()
+        run: bash runner/wipe.sh
