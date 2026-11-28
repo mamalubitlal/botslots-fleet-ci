@@ -1,0 +1,71 @@
+name: ai-build-loop
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+concurrency:
+  group: ai-build
+  cancel-in-progress: false
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENCODE_ZEN_KEY: ${{ secrets.OPENCODE_ZEN_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pick first open queue item
+        id: pick
+        run: |
+          ITEM=$(grep -m1 -n '^- \[ \]' BUILD_QUEUE.md | sed 's/^- \[ \] //')
+          echo "item=$ITEM" >> "$GITHUB_OUTPUT"
+          test -n "$ITEM" || echo "skip=1" >> "$GITHUB_OUTPUT"
+      - name: Draft implementation with opencode zen
+        if: steps.pick.outputs.skip != '1'
+        run: |
+          mkdir -p drafts
+          python3 - <<'PY'
+          import os, json, urllib.request
+          item = "${{ steps.pick.outputs.item }}"
+          key = os.environ["OPENCODE_ZEN_KEY"]
+          if not key:
+              print("OPENCODE_ZEN_KEY not set - queue item stays open")
+              raise SystemExit(0)
+          sys_prompt = (
+              "You are the BotSlots build draftsman. Produce a concrete "
+              "implementation draft (python patch plan + exact route/table/"
+              "template changes + e2e asserts) for the queue item. Respect "
+              "the standing rules: backup, patch, py_compile, restart, e2e, "
+              "verify live; pricing from db.ADDONS/PLANS; honest wording; "
+              "no invented numbers. Output markdown only.")
+          body = json.dumps({
+              "model": "free",
+              "messages": [{"role": "system", "content": sys_prompt},
+                           {"role": "user", "content": item}],
+          }).encode()
+          req = urllib.request.Request(
+              "https://opencode.ai/zen/v1/chat/completions", data=body,
+              headers={"Content-Type": "application/json",
+                       "Authorization": "Bearer " + key})
+          with urllib.request.urlopen(req, timeout=120) as r:
+              resp = json.load(r)
+          text = resp["choices"][0]["message"]["content"]
+          safe = "".join(c if c.isalnum() else "-" for c in item)[:60]
+          open("drafts/%s.md" % safe, "w").write(
+              "# Queue item\n\n%s\n\n# Draft\n\n%s\n" % (item, text))
+          PY
+      - name: Commit draft + open PR
+        if: steps.pick.outputs.skip != '1'
+        run: |
+          git config user.name "ai-build-loop"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -b ai-build/$(date +%s)
+          git add drafts
+          git commit -m "draft: ${{ steps.pick.outputs.item }}" || exit 0
+          git push origin HEAD
+          gh pr create --draft --title "draft: ${{ steps.pick.outputs.item }}"             --body "Auto-drafted by ai-build.yml. Owner reviews before merge." || true
+        env:
+          GH_TOKEN: ${{ github.token }}
